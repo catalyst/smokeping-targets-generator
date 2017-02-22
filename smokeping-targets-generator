@@ -18,57 +18,33 @@
 Reads INI formatted sets of hosts from stdin and produces a SmokePing compatible Targets file on stdout.
 Michael Fincham <michael.fincham@catalyst.net.nz>
 
-The INI formatted description should be of the form:
+The INI formatted description should contain sections of the form:
 
-[National:Foo Ltd]
-192.0.2.1=Host A
-hostb.example.com
-
-[National:Bar Ltd]
-203.0.113.1=Host One
-203.0.113.2=Host Two
+[National:Example Ltd]
+192.0.2.1=Example host
+anotherhost.example.com
 
 Hosts may be specified at any point in the hierarchy.
 
-This will produce a targets file like:
-
-*** Targets ***
-
-probe = FPing
-menu = Top
-title = Network Latency Graphs
+The given example section will produce this output:
 
 + 4E6174696F6E616C_National
 menu = National
 title = National
 
-++ 466F6F204C7464_Foo_Ltd
-menu = Foo Ltd
-title = Foo Ltd
+++ 4578616D706C65204C7464_Example_Ltd
+menu = Example Ltd
+title = Example Ltd
 
-+++ 486F73742041_Host_A
-menu = Host A
-title = Host A (192.0.2.1)
++++ 4578616D706C6520686F7374_Example_host
+menu = Example host
+title = Example host (192.0.2.1)
 host = 192.0.2.1
 
-+++ 686F7374622E6578616D706C652E636F6D_hostb_example_com
-menu = hostb.example.com
-title = hostb.example.com
-host = hostb.example.com
-
-++ 426172204C7464_Bar_Ltd
-menu = Bar Ltd
-title = Bar Ltd
-
-+++ 486F7374204F6E65_Host_One
-menu = Host One
-title = Host One (203.0.113.1)
-host = 203.0.113.1
-
-+++ 486F73742054776F_Host_Two
-menu = Host Two
-title = Host Two (203.0.113.2)
-host = 203.0.113.2
++++ 616E6F74686572686F73742E6578616D706C652E636F6D_anotherhost_example_com
+menu = anotherhost.example.com
+title = anotherhost.example.com
+host = anotherhost.example.com
 """
 
 import argparse
@@ -126,11 +102,15 @@ if __name__ == '__main__':
     parser.add_argument('--menu', help='top level menu name, defaults to "Top"', default="Top")
     parser.add_argument('--title', help='top level title, defaults to "Network Latency Graphs"', default="Network Latency Graphs")
     parser.add_argument('--remark', help='top level remark, defaults to empty if not specified', default=None)
+    parser.add_argument('filename', nargs='?', help='filename to read from, defaults to stdin', default='-')
 
     args = parser.parse_args()
 
     config = ConfigParser.ConfigParser(allow_no_value=True)
-    config.readfp(sys.stdin)
+    if args.filename == '-':
+        config.readfp(sys.stdin)
+    else:
+        config.read(args.filename)
 
     if args.remark:
         remark = "\nremark = %s" % args.remark
@@ -162,4 +142,4 @@ title = %s%s\n
     for section in top_level_sections:
         output += render_section(section, config)
 
-    print output
+    print output.strip()
