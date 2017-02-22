@@ -1,0 +1,157 @@
+#!/usr/bin/python
+#
+# Copyright (c) 2017 Catalyst.net Ltd
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""
+Reads INI formatted sets of hosts from stdin and produces a SmokePing compatible Targets file on stdout.
+Michael Fincham <michael.fincham@catalyst.net.nz>
+
+The INI formatted description should be of the form:
+
+[National:Foo Ltd]
+192.0.2.1=Host A
+hostb.example.com=Host B
+
+[National:Bar Ltd]
+203.0.113.1=Host One
+203.0.113.2=Host Two
+
+Hosts may be specified at any point in the hierarchy.
+
+This will produce a targets file like:
+
+*** Targets ***
+
+probe = FPing
+menu = Top
+title = Network Latency Graphs
+
++ 4E6174696F6E616C_National
+menu = National
+title = National
+
+++ 466F6F204C7464_Foo_Ltd
+menu = Foo Ltd
+title = Foo Ltd
+
++++ 3139322E302E322E31_192_0_2_1
+menu = Host A
+title = Host A (192.0.2.1)
+host = 192.0.2.1
+
++++ 686F7374622E6578616D706C652E636F6D_hostb_example_com
+menu = Host B
+title = Host B (hostb.example.com)
+host = hostb.example.com
+
+++ 426172204C7464_Bar_Ltd
+menu = Bar Ltd
+title = Bar Ltd
+
++++ 3230332E302E3131332E31_203_0_113_1
+menu = Host One
+title = Host One (203.0.113.1)
+host = 203.0.113.1
+
++++ 3230332E302E3131332E32_203_0_113_2
+menu = Host Two
+title = Host Two (203.0.113.2)
+host = 203.0.113.2
+"""
+
+import argparse
+import base64
+import ConfigParser
+import sys
+
+def smokeping_safe_key(text):
+    """
+    Returns an alphanumeric key safe to use in a smokeping configuration file.
+    """
+    return base64.b16encode(text) + '_' + "".join([c for c in text if c.isalpha() or c.isdigit() or c is ' ' or c is '.']).replace(' ', '_').replace('.', '_')
+
+def render_section(section, config, _depth=1):
+    """
+    For a given config and section, recursively render that section and all child sections.
+    """
+
+    output = ""
+    title = section.split(':')[_depth-1]
+
+    # Step 1: output the preamble for this section
+    output += "%s %s\n" % ('+' * _depth, smokeping_safe_key(title))
+    output += "menu = %s\n" % title
+    output += "title = %s\n\n" % title
+
+    # Step 2: output all the hosts directly in this section
+    for host in config.items(section):
+        output += "%s %s\n" % ('+' * (_depth + 1), smokeping_safe_key(host[0]))
+        output += "menu = %s\n" % host[1]
+        output += "title = %s (%s)\n" % (host[1], host[0])
+        output += "host = %s\n\n" % host[0]
+
+    # Step 3: recursively find all the subsections of this one
+    for subsection in set([subsection.split(':')[_depth] for subsection in config.sections() if subsection.startswith("%s:" % section)]):
+        output += render_section("%s:%s" % (section, subsection), config, _depth+1)
+
+    return output
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="\n".join(__doc__.splitlines(False)[1:3]),
+        epilog="\n".join(__doc__.splitlines(False)[3:])
+    )
+    parser.add_argument('--probe', help='probe to use, defaults to "FPing"', default="FPing")
+    parser.add_argument('--menu', help='top level menu name, defaults to "Top"', default="Top")
+    parser.add_argument('--title', help='top level title, defaults to "Network Latency Graphs"', default="Network Latency Graphs")
+    parser.add_argument('--remark', help='top level remark, defaults to empty if not specified', default=None)
+
+    args = parser.parse_args()
+
+    config = ConfigParser.ConfigParser()
+    config.readfp(sys.stdin)
+
+    if args.remark:
+        remark = "\nremark = %s" % args.remark
+    else:
+        remark = ""
+
+    output = """\
+*** Targets ***
+
+probe = %s
+menu = %s
+title = %s%s\n
+""" % (args.probe, args.menu, args.title, remark)
+
+    sections = config.sections()
+
+    # ensure all referenced sections exist, even ones only referred to implicitly
+    # XXX there is probably a tidier way to do this
+    for section in sections:
+        section_name_components = section.split(':')
+        for index in range(0, len(section_name_components)):
+            new_section_name = ':'.join(section_name_components[0:index+1])
+            try:
+                config.add_section(new_section_name)
+            except ConfigParser.DuplicateSectionError:
+                pass
+
+    top_level_sections = [section for section in config.sections() if ':' not in section]
+    for section in top_level_sections:
+        output += render_section(section, config)
+
+    print output
