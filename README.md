@@ -16,7 +16,7 @@ The INI formatted description should be of the form:
     203.0.113.1=Host One
     203.0.113.2=Host Two
 
-Hosts may be specified at any point in the hierarchy.
+Hosts may be specified at any point in the hierarchy, and hierarchies may be arbitrarily deep (e.g. `Level 1:Level 2:Level 3`).
 
 This will produce a targets file like:
 
